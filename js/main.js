@@ -1,6 +1,6 @@
 // Boot: load portraits + font, build every character's animation set, run the 60fps loop.
 import { W, H, makeCanvas, text } from './util.js';
-import { updatePads, setupTouch } from './input.js';
+import { updatePads, setupTouch, pads, onPadEvent, onPadActivity, onEmptyTap, padKind, connectedPads } from './input.js';
 import { initAudio } from './audio.js';
 import { buildCharacter } from './moves.js';
 import { MARVEL } from './chars/marvel.js';
@@ -20,6 +20,14 @@ function fit() {
 }
 window.addEventListener('resize', fit);
 fit();
+
+let toastT = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2600);
+}
 
 function loadImage(src) {
   return new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
@@ -70,6 +78,14 @@ async function boot() {
     await new Promise((r) => setTimeout(r, 0));
   }
   setupTouch();
+  onEmptyTap(() => { const n = game.scene && game.scene.constructor.name; if (n === 'TitleScene' || n === 'ResultScene') pads[0].tap.add('Enter'); });
+  onPadEvent((type, gp) => {
+    const idx = connectedPads().indexOf(gp);
+    if (type === 'connect') { toast(`${padKind(gp)} CONTROLLER CONNECTED - PLAYER ${Math.max(0, idx) + 1}`); try { gp.vibrationActuator && gp.vibrationActuator.playEffect('dual-rumble', { duration: 180, strongMagnitude: 0.5, weakMagnitude: 0.5 }); } catch (e) { /* no rumble */ } }
+    else toast(`${padKind(gp)} CONTROLLER DISCONNECTED`);
+  });
+  const armPadAudio = () => onPadActivity(() => { initAudio(); setTimeout(armPadAudio, 1000); });
+  armPadAudio();
   const startAudio = () => { initAudio(); };
   window.addEventListener('pointerdown', startAudio, { once: true });
   window.addEventListener('keydown', startAudio, { once: true });

@@ -111,6 +111,7 @@ const wonder = {
   stats: { hp: 1050, walk: 2.6, back: 2.3, jump: 12, dash: 7.5, float: true, power: 1.1 },
   face: [0.6, 0.12],
   look: {
+    female: true,
     neck: WW_SKIN,
     hair: { c: '#14141e', len: 30, base: 15, spread: 30, n: 7, w: 5.5, curl: 8 },
     parts: {
@@ -134,7 +135,7 @@ const wonder = {
       ctx.fillStyle = WW_G; ctx.beginPath(); ctx.moveTo(-r * 0.3, -r * 0.82); ctx.lineTo(r * 0.95, -r * 0.6); ctx.lineTo(r * 0.95, -r * 0.45); ctx.lineTo(-r * 0.3, -r * 0.68); ctx.fill();
       ctx.fillStyle = WW_R; ctx.beginPath(); ctx.moveTo(r * 0.55, -r * 0.82); ctx.lineTo(r * 0.65, -r * 0.6); ctx.lineTo(r * 0.45, -r * 0.62); ctx.fill();
     },
-    mid: (ctx, sk) => { ctx.strokeStyle = '#ffd040'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(sk.hipB[0] - 4, sk.hipB[1] - 2, 6, 4, 0.3, 0, Math.PI * 2); ctx.stroke(); },
+    mid: (ctx, sk) => { ctx.strokeStyle = '#ffd040'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(sk.hipB[0] - 3, sk.hipB[1] + 2, 3.5, 4.5, 0.3, 0, Math.PI * 2); ctx.stroke(); },
   },
   normals: { hp: { dmg: 85, fxKind: 'big' } },
   specials: [
@@ -373,6 +374,7 @@ const raven = {
   face: [0.5, 0.15], ai: 'zone',
   stance: { legs: [8, -10, 0], lean: 0, head: -2, aF: 70, eF: 40, aB: 50, eB: 40, hF: 'open', hB: 'open', y: -6 },
   look: {
+    female: true,
     neck: RV_K,
     cape: { c: RV_C, len: 86, w: 46, base: 10, style: 'tatter' },
     parts: {
@@ -476,6 +478,7 @@ const ivy = {
   face: [0.48, 0.1], ai: 'zone',
   stance: { legs: [8, -12, 2], lean: -2, head: -4, aF: 50, eF: 70, aB: 20, eB: 60, hF: 'open', hB: 'open' },
   look: {
+    female: true,
     neck: PI_SKIN,
     hair: { c: PI_H, len: 30, base: 20, spread: 30, n: 7, w: 5.5, curl: 9 },
     parts: {

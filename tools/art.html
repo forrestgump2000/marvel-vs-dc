@@ -36,7 +36,7 @@ function sprite(id, pick, facing, scale) {
   const r = f.buf.render(f.sk, f, d.look, facing, scale);
   const c = makeCanvas(r[2], r[3]);
   c.getContext('2d').drawImage(f.buf.cv, r[0], r[1], r[2], r[3], 0, 0, r[2], r[3]);
-  return { c, ox: 210 - r[0], oy: 300 - r[1], f, d };
+  return { c, ox: 260 - r[0], oy: 370 - r[1], f, d };
 }
 function place(ctx, s, x, y) { ctx.drawImage(s.c, Math.round(x - s.ox), Math.round(y - s.oy)); }
 

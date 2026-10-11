@@ -19,6 +19,11 @@ export const KEYMAP = [
 
 const keysDown = new Set();
 const touchDown = new Set();
+const touchTapped = new Set();
+let touchActive = false;
+let padActivityCb = null;
+export function onPadActivity(cb) { padActivityCb = cb; }
+function padActivity() { if (padActivityCb) { const cb = padActivityCb; padActivityCb = null; cb(); } }
 let anyKeyCb = null;
 
 window.addEventListener('keydown', (e) => {
@@ -33,8 +38,26 @@ window.addEventListener('blur', () => keysDown.clear());
 
 export function onAnyKey(cb) { anyKeyCb = cb; }
 
-// standard gamepad layout
-const PADMAP = { 2: 'lp', 3: 'hp', 0: 'lk', 1: 'hk', 5: 'sp', 7: 'hy', 4: 'as', 6: 'tg', 8: 'ta', 9: 'st', 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
+// Standard gamepad layout (PS5 DualSense / PS4 / Xbox all report this mapping in browsers):
+// 0 Cross  1 Circle  2 Square  3 Triangle  4 L1  5 R1  6 L2  7 R2  8 Create  9 Options  12-15 D-pad  17 Touchpad
+const PADMAP = { 2: 'lp', 3: 'hp', 0: 'lk', 1: 'hk', 5: 'sp', 7: 'hy', 4: 'as', 6: 'tg', 8: 'ta', 9: 'st', 17: 'st', 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
+
+// connected controllers in connection order: first one drives player 1, second player 2
+export function connectedPads() {
+  const gps = navigator.getGamepads ? [...navigator.getGamepads()] : [];
+  return gps.filter((g) => g && g.connected);
+}
+export function padKind(gp) {
+  const id = (gp && gp.id || '').toLowerCase();
+  if (id.includes('dualsense') || id.includes('0ce6') || id.includes('0df2')) return 'PS5';
+  if (id.includes('054c') || id.includes('dualshock') || id.includes('wireless controller')) return 'PlayStation';
+  if (id.includes('xbox') || id.includes('045e')) return 'Xbox';
+  return 'Gamepad';
+}
+const listeners = [];
+export function onPadEvent(cb) { listeners.push(cb); }
+window.addEventListener('gamepadconnected', (e) => listeners.forEach((cb) => cb('connect', e.gamepad)));
+window.addEventListener('gamepaddisconnected', (e) => listeners.forEach((cb) => cb('disconnect', e.gamepad)));
 
 export class Pad {
   constructor(id) {
@@ -45,6 +68,7 @@ export class Pad {
     this.cpu = null; // AI-controlled virtual pad
     this.virt = {};
     this.tap = new Set();
+    this.gp = null;
   }
   update() {
     this.prev = this.cur;
@@ -55,27 +79,42 @@ export class Pad {
       const map = KEYMAP[this.id];
       for (const code of keysDown) if (map[code]) c[map[code]] = true;
       for (const code of this.tap) if (map[code]) c[map[code]] = true;
-      if (this.id === 0) for (const b of touchDown) c[b] = true;
-      const gps = navigator.getGamepads ? navigator.getGamepads() : [];
-      const gp = gps && gps[this.id];
+      if (this.id === 0) { for (const b of touchDown) c[b] = true; for (const b of touchTapped) c[b] = true; touchTapped.clear(); }
+      const gp = connectedPads()[this.id] || null;
+      this.gp = gp;
       if (gp) {
-        gp.buttons.forEach((b, i) => { if (b.pressed && PADMAP[i]) c[PADMAP[i]] = true; });
+        gp.buttons.forEach((b, i) => { if ((b.pressed || b.value > 0.4) && PADMAP[i]) c[PADMAP[i]] = true; });
         const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
-        if (ax < -0.45) c.left = true;
-        if (ax > 0.45) c.right = true;
-        if (ay < -0.5) c.up = true;
-        if (ay > 0.5) c.down = true;
+        // 8-way stick with a generous diagonal zone so quarter-circles are easy
+        const mag = Math.hypot(ax, ay);
+        if (mag > 0.42) {
+          const ang = Math.atan2(ay, ax);
+          const oct = Math.round(ang / (Math.PI / 4));
+          const dirs = { 0: ['right'], 1: ['right', 'down'], 2: ['down'], 3: ['left', 'down'], 4: ['left'], '-4': ['left'], '-3': ['left', 'up'], '-2': ['up'], '-1': ['right', 'up'] };
+          (dirs[oct] || []).forEach((d) => { c[d] = true; });
+        }
+        if (gp.buttons.some((b) => b.pressed)) padActivity();
       }
     }
     this.tap.clear();
     this.cur = c;
+  }
+  // controller rumble (DualSense / Xbox in Chromium) or phone vibration for touch players
+  rumble(ms = 80, strong = 0.6, weak = 0.4) {
+    if (this.cpu) return;
+    const gp = this.gp;
+    try {
+      if (gp && gp.vibrationActuator && gp.vibrationActuator.playEffect) {
+        gp.vibrationActuator.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: weak });
+      } else if (this.id === 0 && touchActive && navigator.vibrate) navigator.vibrate(Math.min(ms, 60));
+    } catch (e) { /* unsupported */ }
   }
   held(b) { return !!this.cur[b]; }
   pressed(b) { return !!this.cur[b] && !this.prev[b]; }
   released(b) { return !this.cur[b] && !!this.prev[b]; }
   anyPressed(...bs) { return bs.some((b) => this.pressed(b)); }
   confirm() { return this.anyPressed('lp', 'lk', 'st'); }
-  back() { return this.anyPressed('bk', 'hp'); }
+  back() { return this.anyPressed('bk', 'hk'); }
   // numpad notation relative to facing (6 = toward opponent)
   dirNum(facing) {
     let x = (this.held('right') ? 1 : 0) - (this.held('left') ? 1 : 0);
@@ -113,43 +152,90 @@ export class Pad {
 export const pads = [new Pad(0), new Pad(1)];
 export function updatePads() { pads.forEach((p) => p.update()); }
 
-// on-screen touch controls for phones/tablets
+// on-screen touch controls for phones/tablets: floating stick on the left half,
+// arcade button cluster on the right. Thumbs can slide across buttons (rolling inputs).
+let emptyTapCb = null;
+export function onEmptyTap(cb) { emptyTapCb = cb; }
 export function setupTouch() {
   const root = document.getElementById('touch');
   if (!root) return;
   const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   if (!isTouch) return;
+  touchActive = true;
   root.classList.add('on');
-  root.querySelectorAll('[data-b]').forEach((el) => {
-    const bs = el.dataset.b.split(' ');
-    const down = (e) => { e.preventDefault(); bs.forEach((b) => touchDown.add(b)); el.classList.add('down'); };
-    const up = (e) => { e.preventDefault(); bs.forEach((b) => touchDown.delete(b)); el.classList.remove('down'); };
-    el.addEventListener('touchstart', down, { passive: false });
-    el.addEventListener('touchend', up, { passive: false });
-    el.addEventListener('touchcancel', up, { passive: false });
-  });
-  // analog-ish stick
-  const stick = root.querySelector('.stick');
-  if (stick) {
-    const knob = stick.querySelector('.knob');
-    const set = (t) => {
-      const r = stick.getBoundingClientRect();
-      const dx = t.clientX - (r.left + r.width / 2), dy = t.clientY - (r.top + r.height / 2);
-      ['up', 'down', 'left', 'right'].forEach((b) => touchDown.delete(b));
-      const dead = r.width * 0.18;
-      if (dx < -dead) touchDown.add('left');
-      if (dx > dead) touchDown.add('right');
-      if (dy < -dead) touchDown.add('up');
-      if (dy > dead) touchDown.add('down');
-      const m = Math.min(1, Math.hypot(dx, dy) / (r.width / 2));
-      const a = Math.atan2(dy, dx);
-      knob.style.transform = `translate(${Math.cos(a) * m * 30}px, ${Math.sin(a) * m * 30}px)`;
-    };
-    stick.addEventListener('touchstart', (e) => { e.preventDefault(); set(e.targetTouches[0]); }, { passive: false });
-    stick.addEventListener('touchmove', (e) => { e.preventDefault(); set(e.targetTouches[0]); }, { passive: false });
-    const end = (e) => { e.preventDefault(); ['up', 'down', 'left', 'right'].forEach((b) => touchDown.delete(b)); knob.style.transform = ''; };
-    stick.addEventListener('touchend', end, { passive: false });
-    stick.addEventListener('touchcancel', end, { passive: false });
-  }
+  document.body.classList.add('touch');
+  const stickZone = root.querySelector('.stickzone');
+  const base = root.querySelector('.stick');
+  const knob = root.querySelector('.knob');
+  const btnEls = [...root.querySelectorAll('[data-b]')];
+  const owners = new Map(); // touch id -> 'stick' | button element
+  let stickId = null, ox = 0, oy = 0;
+  const DIRS = ['up', 'down', 'left', 'right'];
+
+  const setStick = (x, y) => {
+    const dx = x - ox, dy = y - oy;
+    const R = base.offsetWidth / 2;
+    DIRS.forEach((d) => touchDown.delete(d));
+    const mag = Math.hypot(dx, dy);
+    if (mag > R * 0.28) {
+      const oct = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+      const map = { 0: ['right'], 1: ['right', 'down'], 2: ['down'], 3: ['left', 'down'], 4: ['left'], '-4': ['left'], '-3': ['left', 'up'], '-2': ['up'], '-1': ['right', 'up'] };
+      (map[oct] || []).forEach((d) => touchDown.add(d));
+    }
+    const k = Math.min(1, mag / R);
+    const a = Math.atan2(dy, dx);
+    knob.style.transform = `translate(${Math.cos(a) * k * R * 0.6}px, ${Math.sin(a) * k * R * 0.6}px)`;
+  };
+  const btnAt = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    return el && el.closest ? el.closest('[data-b]') : null;
+  };
+  const press = (el) => { if (!el) return; el.dataset.b.split(' ').forEach((b) => { touchDown.add(b); touchTapped.add(b); }); el.classList.add('down'); if (navigator.vibrate) navigator.vibrate(8); };
+  const release = (el) => {
+    if (!el) return;
+    // only release if no other finger is on the same button
+    for (const [, o] of owners) if (o === el) return;
+    el.dataset.b.split(' ').forEach((b) => touchDown.delete(b)); el.classList.remove('down');
+  };
+  const goFull = () => {
+    const d = document.documentElement;
+    if (!document.fullscreenElement && d.requestFullscreen) d.requestFullscreen({ navigationUI: 'hide' }).then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); }).catch(() => {});
+  };
+
+  const down = (t) => {
+    const zone = t.target.closest ? t.target.closest('.stickzone') : null;
+    if (zone && stickId === null) {
+      stickId = t.pointerId; owners.set(t.pointerId, 'stick');
+      const r = stickZone.getBoundingClientRect();
+      ox = t.clientX; oy = t.clientY;
+      base.style.left = (ox - r.left) + 'px'; base.style.top = (oy - r.top) + 'px';
+      base.classList.add('live');
+      setStick(t.clientX, t.clientY);
+    } else {
+      const el = btnAt(t.clientX, t.clientY);
+      owners.set(t.pointerId, el);
+      if (el) press(el); else if (emptyTapCb) emptyTapCb();
+    }
+  };
+  root.addEventListener('pointerdown', (e) => { e.preventDefault(); goFull(); down(e); }, { passive: false });
+  root.addEventListener('pointermove', (e) => {
+    if (!owners.has(e.pointerId)) return;
+    e.preventDefault();
+    const o = owners.get(e.pointerId);
+    if (o === 'stick') { setStick(e.clientX, e.clientY); return; }
+    const el = btnAt(e.clientX, e.clientY);
+    if (el !== o) { owners.set(e.pointerId, el); release(o); press(el); }
+  }, { passive: false });
+  const end = (e) => {
+    if (!owners.has(e.pointerId)) return;
+    const o = owners.get(e.pointerId);
+    owners.delete(e.pointerId);
+    if (o === 'stick') { stickId = null; DIRS.forEach((d) => touchDown.delete(d)); knob.style.transform = ''; base.classList.remove('live'); }
+    else release(o);
+  };
+  root.addEventListener('pointerup', end);
+  root.addEventListener('pointercancel', end);
+  root.addEventListener('contextmenu', (e) => e.preventDefault());
+  void btnEls;
 }
 export { BUTTONS };

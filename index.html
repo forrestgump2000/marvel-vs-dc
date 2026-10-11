@@ -6,6 +6,9 @@
   <title>Marvel vs. DC</title>
   <meta name="description" content="A mid-2000s style 2-on-2 tag fighting game: 10 Marvel heroes vs 10 DC heroes, each with unique specials, hypers, taunts and animations.">
   <meta name="theme-color" content="#0a0a14">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta property="og:title" content="Marvel vs. DC">
   <meta property="og:description" content="Pick your team, pick your opponents, and throw down in 2-on-2 arcade tag battles.">
   <meta property="og:image" content="/assets/thumbnail.png">
@@ -25,14 +28,16 @@
 <body>
   <canvas id="game" width="640" height="360"></canvas>
   <div id="touch">
-    <div class="stick"><div class="knob"></div></div>
-    <div class="btns">
-      <div class="b lp" data-b="lp">LP</div><div class="b hp" data-b="hp">HP</div><div class="b sp" data-b="sp">SP</div>
-      <div class="b lk" data-b="lk">LK</div><div class="b hk" data-b="hk">HK</div><div class="b hy" data-b="hy">HY</div>
-      <div class="b as" data-b="as">AS</div><div class="b tg" data-b="tg">TAG</div>
+    <div class="stickzone"><div class="stick"><div class="knob"></div></div></div>
+    <div class="cluster">
+      <div class="row small"><div class="b as" data-b="as">ASSIST</div><div class="b tg" data-b="tg">TAG</div></div>
+      <div class="row"><div class="b lp" data-b="lp">LP</div><div class="b hp" data-b="hp">HP</div><div class="b sp" data-b="sp">SP</div></div>
+      <div class="row"><div class="b lk" data-b="lk">LK</div><div class="b hk" data-b="hk">HK</div><div class="b hy" data-b="hy">HYPER</div></div>
     </div>
-    <div class="b start" data-b="st">II</div>
+    <div class="b start" data-b="st">&#10073;&#10073;</div>
   </div>
+  <div id="rotate"><div class="phone"></div><p>ROTATE YOUR DEVICE</p></div>
+  <div id="toast"></div>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

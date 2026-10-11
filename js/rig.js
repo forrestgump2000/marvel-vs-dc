@@ -1,13 +1,14 @@
 // Skeletal character rig: pose math, inverse kinematics, body-part painting, and the
 // pixel-sprite pass that turns smooth vector drawing into crisp, outlined arcade sprites.
-import { DEG, clamp, lerp, smooth, easeOut, easeIn, dirv, angOf, shade, makeCanvas } from './util.js';
+import { DEG, clamp, lerp, smooth, easeOut, easeIn, dirv, angOf, shade, makeCanvas, hexRgb } from './util.js';
+import { headPath } from './chars/parts.js';
 
 export const BASE_BODY = {
   thigh: 30, shin: 30, torso: 42, neck: 5, upperArm: 23, foreArm: 21, headR: 9,
-  wS: 15, wC: 14, wW: 10, wH: 12, wUA: 5.5, wFA: 4.6, wTh: 7.5, wSh: 5.5, handR: 4.4, footL: 13, footH: 5,
+  wS: 16.5, wC: 15, wW: 9.6, wH: 11.6, wUA: 5.8, wFA: 4.8, wTh: 7.6, wSh: 5.6, handR: 4.8, footL: 13, footH: 5,
   bUA: 1.5, bFA: 1, bTh: 1.5, bSh: 1.2,
 };
-export const makeBody = (o) => ({ ...BASE_BODY, ...o });
+export const makeBody = (o = {}) => ({ ...BASE_BODY, ...o, headR: (o.headR || BASE_BODY.headR) * 1.07 });
 
 const NUM = ['x', 'y', 'lean', 'head', 'aF', 'eF', 'aB', 'eB', 'lF', 'kF', 'lB', 'kB', 'rot', 'wl', 'sq', 'ftF', 'ftB', 'gx'];
 const DISC = ['hF', 'hB', 'wpn', 'face', 'fx', 'hide'];
@@ -136,163 +137,251 @@ export function bounds(sk) {
 }
 
 // ------------------------------------------------------------------ painting primitives
-export function capsulePath(ctx, len, w1, w2, bulge = 0, bulgeAt = 0.4) {
-  const m = Math.max(w1, w2) + bulge;
+// Cel-shaded anatomy: each part is painted flat (base + costume pattern), then a shadow band on the
+// side facing away from the light, a highlight band on the lit edge, and a dark inner contour.
+const SHADOW = 'rgba(26,10,58,0.42)';
+const HILITE = 'rgba(255,248,228,0.32)';
+const LIGHT = [0.42, -0.91]; // direction toward the light, in facing-right sprite space
+
+// which local x side of a part rotated by `ang` faces the light (+1 / -1)
+export function litSide(ang) {
+  const r = -ang * DEG;
+  return Math.cos(r) * LIGHT[0] + Math.sin(r) * LIGHT[1] >= 0 ? 1 : -1;
+}
+
+// half-width multipliers along each limb (t = 0, .22, .5, .78, 1); side a = +x (front), b = -x (back)
+const PROFILES = {
+  upperArm: { a: [1.22, 1.14, 1.2, 1.0, 0.86], b: [1.12, 1.08, 1.04, 0.94, 0.86] },
+  foreArm: { a: [1.02, 1.18, 1.04, 0.82, 0.74], b: [1.06, 1.12, 0.94, 0.78, 0.72] },
+  thigh: { a: [1.1, 1.16, 1.1, 0.96, 0.84], b: [1.08, 1.08, 1.06, 0.92, 0.82] },
+  shin: { a: [0.98, 0.96, 0.86, 0.76, 0.7], b: [1.02, 1.3, 1.14, 0.84, 0.7] },
+  plain: { a: [1, 1, 1, 1, 1], b: [1, 1, 1, 1, 1] },
+};
+const TS = [0, 0.22, 0.5, 0.78, 1];
+
+export function limbPath(ctx, len, w1, w2, kind = 'plain', bulge = 0) {
+  const pr = PROFILES[kind] || PROFILES.plain;
+  const A = TS.map((t, i) => [lerp(w1, w2, t) * pr.a[i] * (i === 2 ? 1 + bulge * 0.06 : 1), t * len]);
+  const B = TS.map((t, i) => [-lerp(w1, w2, t) * pr.b[i] * (i === 2 ? 1 + bulge * 0.03 : 1), t * len]);
   ctx.beginPath();
-  ctx.moveTo(-w1, 0);
-  ctx.quadraticCurveTo(-m, len * bulgeAt, -w2, len);
-  ctx.arc(0, len, w2, Math.PI, 0, true);
-  ctx.quadraticCurveTo(m - bulge * 0.4, len * bulgeAt, w1, 0);
-  ctx.arc(0, 0, w1, 0, Math.PI, true);
+  ctx.moveTo(B[0][0], 0);
+  ctx.bezierCurveTo(B[0][0] * 0.95, -w1 * 1.05, A[0][0] * 0.95, -w1 * 1.05, A[0][0], 0);
+  for (let i = 1; i < A.length - 1; i++) ctx.quadraticCurveTo(A[i][0], A[i][1], (A[i][0] + A[i + 1][0]) / 2, (A[i][1] + A[i + 1][1]) / 2);
+  ctx.lineTo(A[4][0], A[4][1]);
+  ctx.bezierCurveTo(A[4][0] * 0.95, len + w2 * 1.1, B[4][0] * 0.95, len + w2 * 1.1, B[4][0], len);
+  for (let i = B.length - 2; i > 0; i--) ctx.quadraticCurveTo(B[i][0], B[i][1], (B[i][0] + B[i - 1][0]) / 2, (B[i][1] + B[i - 1][1]) / 2);
   ctx.closePath();
 }
+// kept for weapons/effects that still want a simple capsule
+export function capsulePath(ctx, len, w1, w2, bulge = 0) { limbPath(ctx, len, w1, w2, 'plain', bulge); }
 
-export function matFill(ctx, c, w, dim = 1) {
-  const base = dim === 1 ? c : shade(c, dim);
-  const g = ctx.createLinearGradient(-w, 0, w, 0);
-  g.addColorStop(0, shade(base, 1.18));
-  g.addColorStop(0.32, shade(base, 1.06));
-  g.addColorStop(0.62, base);
-  g.addColorStop(1, shade(base, 0.6));
-  return g;
+// shading overlay for any shape drawn by pathFn (already clipped by caller)
+function celShade(ctx, pathFn, W, s, opts = {}) {
+  const d1 = W * (opts.sh || 1.15), d2 = W * (opts.hl || 1.55);
+  ctx.translate(-s * d1, opts.dy || 0); pathFn(); ctx.fillStyle = SHADOW; ctx.fill(); ctx.translate(s * d1, -(opts.dy || 0));
+  ctx.translate(s * d2, -(opts.dy2 || 0)); pathFn(); ctx.fillStyle = HILITE; ctx.fill(); ctx.translate(-s * d2, opts.dy2 || 0);
+}
+function dimOverlay(ctx, dim) {
+  if (dim >= 1) return;
+  ctx.fillStyle = `rgba(14,6,34,${Math.min(0.6, (1 - dim) * 1.25)})`;
+  ctx.fillRect(-400, -400, 800, 800);
 }
 
-// move into a local frame where +y runs from point a toward point b
+export function matFill(ctx, c, w, dim = 1) { return dim === 1 ? c : shade(c, dim); }
+
 export function toLocal(ctx, a, ang) {
   ctx.translate(a[0], a[1]);
   ctx.rotate(-ang * DEG);
 }
 
-export function limb(ctx, a, ang, len, w1, w2, part, f, dim, bulge = 0) {
+export function limb(ctx, a, ang, len, w1, w2, part, f, dim, bulge = 0, kind = 'plain') {
   ctx.save();
   toLocal(ctx, a, ang);
-  capsulePath(ctx, len, w1, w2, bulge);
-  ctx.fillStyle = matFill(ctx, part.c, Math.max(w1, w2), dim);
+  const path = () => limbPath(ctx, len, w1, w2, kind, bulge);
+  path();
+  ctx.fillStyle = part.c;
   ctx.fill();
-  if (part.pat) {
-    ctx.save();
-    ctx.clip();
-    part.pat(ctx, len, w1, w2, f, dim);
-    ctx.restore();
+  ctx.save();
+  ctx.clip();
+  if (part.pat) part.pat(ctx, len, w1, w2, f, dim);
+  const W = Math.max(w1, w2);
+  const s = litSide(ang);
+  celShade(ctx, path, W, s);
+  // muscle separation hints
+  if (part.muscle !== false && (kind === 'upperArm' || kind === 'thigh')) {
+    ctx.strokeStyle = 'rgba(26,10,58,0.28)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(-s * W * 0.15, len * 0.18); ctx.quadraticCurveTo(-s * W * 0.45, len * 0.5, -s * W * 0.1, len * 0.86); ctx.stroke();
   }
+  if (kind === 'shin' && part.muscle !== false) {
+    ctx.fillStyle = 'rgba(255,248,228,0.14)'; ctx.beginPath(); ctx.ellipse(W * 0.2, 1, W * 0.55, W * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  dimOverlay(ctx, dim);
+  ctx.restore();
+  path();
+  ctx.strokeStyle = shade(part.c, 0.38);
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
   ctx.restore();
 }
 
+// heroic V-taper torso: traps, deltoid line, lats, narrow waist, hips
 export function torsoPath(ctx, T, b) {
+  // 3/4 view: the chest side toward the camera (+x) is fuller, the back side narrower
+  const F = 1.06, K = 0.88;
   const { wH, wW, wC, wS } = b;
+  const wN = b.headR * 0.62;
   ctx.beginPath();
-  ctx.moveTo(-wH, 3);
-  ctx.quadraticCurveTo(-wW - 1, -T * 0.25, -wW, -T * 0.42);
-  ctx.quadraticCurveTo(-wC - 1.5, -T * 0.62, -wS, -T * 0.86);
-  ctx.quadraticCurveTo(-wS * 0.75, -T - 2, 0, -T - 1);
-  ctx.quadraticCurveTo(wS * 0.75, -T - 2, wS, -T * 0.86);
-  ctx.quadraticCurveTo(wC + 1.5, -T * 0.62, wW, -T * 0.42);
-  ctx.quadraticCurveTo(wW + 1, -T * 0.25, wH, 3);
-  ctx.quadraticCurveTo(0, 7, -wH, 3);
+  ctx.moveTo(1, 4);
+  ctx.quadraticCurveTo(-wH * 0.6 * K, 4, -wH * K, 0);
+  ctx.quadraticCurveTo(-wH * 1.0 * K, -T * 0.12, -wW * K, -T * 0.3);
+  ctx.quadraticCurveTo(-wW * 0.96 * K, -T * 0.45, -wC * K, -T * 0.6);
+  ctx.quadraticCurveTo(-wC * 1.06 * K, -T * 0.73, -wS * K, -T * 0.85);
+  ctx.quadraticCurveTo(-wS * K, -T * 0.97, -wS * 0.66 * K, -T * 0.97);
+  ctx.quadraticCurveTo(-wN * 1.3, -T * 0.98, -wN + 1, -T - 2);
+  ctx.lineTo(wN + 1, -T - 2);
+  ctx.quadraticCurveTo(wN * 1.5, -T * 0.98, wS * 0.72 * F, -T * 0.97);
+  ctx.quadraticCurveTo(wS * 1.04 * F, -T * 0.96, wS * 1.04 * F, -T * 0.84);
+  ctx.quadraticCurveTo(wC * 1.14 * F, -T * 0.7, wC * F, -T * 0.58);
+  ctx.quadraticCurveTo(wW * 0.98 * F, -T * 0.44, wW * F, -T * 0.3);
+  ctx.quadraticCurveTo(wH * 1.02 * F, -T * 0.12, wH * F, 0);
+  ctx.quadraticCurveTo(wH * 0.6 * F, 4, 1, 4);
   ctx.closePath();
 }
 
-export function drawTorso(ctx, sk, part, f, look) {
+export function drawTorso(ctx, sk, part, f, look, pelvisOnly = false) {
   const b = sk.b, T = b.torso;
   ctx.save();
   ctx.translate(sk.hip[0], sk.hip[1]);
   ctx.rotate(sk.a.lean * DEG);
-  torsoPath(ctx, T, b);
-  const g = ctx.createLinearGradient(-b.wS, -T, b.wS, 0);
-  g.addColorStop(0, shade(part.c, 1.2));
-  g.addColorStop(0.45, part.c);
-  g.addColorStop(1, shade(part.c, 0.62));
-  ctx.fillStyle = g;
+  if (pelvisOnly) { ctx.beginPath(); ctx.rect(-80, -T * 0.2, 160, T * 0.2 + 12); ctx.clip(); }
+  const path = () => torsoPath(ctx, T, b);
+  path();
+  ctx.fillStyle = part.c;
   ctx.fill();
   ctx.save();
   ctx.clip();
-  // generic muscle shading: pecs + abs
-  if (!part.flat) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
-    ctx.lineWidth = 1;
+  if (look.female && !part.flat) {
+    ctx.strokeStyle = 'rgba(26,10,58,0.32)'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.ellipse(b.wC * 0.38, -T * 0.68, b.wC * 0.42, T * 0.1, 0, 0.2, Math.PI - 0.2); ctx.ellipse(-b.wC * 0.4, -T * 0.68, b.wC * 0.36, T * 0.09, 0, 0.3, Math.PI - 0.3); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,248,228,0.2)'; ctx.beginPath(); ctx.ellipse(b.wC * 0.45, -T * 0.73, b.wC * 0.25, T * 0.05, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (!part.flat) {
+    // pecs, sternum, abs, obliques
+    ctx.strokeStyle = 'rgba(26,10,58,0.3)'; ctx.lineWidth = 0.9;
     ctx.beginPath();
-    ctx.moveTo(-b.wC * 0.8, -T * 0.62); ctx.quadraticCurveTo(-b.wC * 0.3, -T * 0.55, 0, -T * 0.63);
-    ctx.quadraticCurveTo(b.wC * 0.3, -T * 0.55, b.wC * 0.8, -T * 0.62);
-    ctx.moveTo(0, -T * 0.82); ctx.lineTo(0, -T * 0.1);
-    for (let i = 0; i < 3; i++) { const yy = -T * (0.46 - i * 0.12); ctx.moveTo(-b.wW * 0.55, yy); ctx.lineTo(b.wW * 0.55, yy); }
+    ctx.moveTo(-b.wC * 0.9, -T * 0.66); ctx.quadraticCurveTo(-b.wC * 0.45, -T * 0.52, -1, -T * 0.6);
+    ctx.moveTo(b.wC * 0.9, -T * 0.66); ctx.quadraticCurveTo(b.wC * 0.45, -T * 0.52, 1, -T * 0.6);
+    ctx.moveTo(0, -T * 0.86); ctx.lineTo(0, -T * 0.12);
+    for (let i = 0; i < 3; i++) { const yy = -T * (0.47 - i * 0.11); ctx.moveTo(-b.wW * 0.6, yy + 1); ctx.quadraticCurveTo(-b.wW * 0.3, yy - 1, 0, yy); ctx.quadraticCurveTo(b.wW * 0.3, yy - 1, b.wW * 0.6, yy + 1); }
+    ctx.moveTo(-b.wW * 0.85, -T * 0.5); ctx.quadraticCurveTo(-b.wW * 0.75, -T * 0.25, -b.wH * 0.55, -T * 0.05);
+    ctx.moveTo(b.wW * 0.85, -T * 0.5); ctx.quadraticCurveTo(b.wW * 0.75, -T * 0.25, b.wH * 0.55, -T * 0.05);
     ctx.stroke();
+    ctx.fillStyle = 'rgba(255,248,228,0.16)';
+    ctx.beginPath(); ctx.ellipse(b.wC * 0.42, -T * 0.72, b.wC * 0.35, T * 0.07, -0.2, 0, Math.PI * 2); ctx.fill();
   }
   if (part.pat) part.pat(ctx, T, b, f);
+  // cel shading: back side in shadow, chest underside, shoulder highlight
+  ctx.translate(-b.wS * 1.35, 0); path(); ctx.fillStyle = SHADOW; ctx.fill(); ctx.translate(b.wS * 1.35, 0);
+  ctx.fillStyle = 'rgba(26,10,58,0.18)'; ctx.beginPath(); ctx.ellipse(0, -T * 0.55, b.wC * 1.1, T * 0.05, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.translate(b.wS * 1.62, -T * 0.08); path(); ctx.fillStyle = HILITE; ctx.fill(); ctx.translate(-b.wS * 1.62, T * 0.08);
   ctx.restore();
   if (look.torsoOver) look.torsoOver(ctx, T, b, f);
+  if (!pelvisOnly) { path(); ctx.strokeStyle = shade(part.c, 0.38); ctx.lineWidth = 0.9; ctx.stroke(); }
+  ctx.restore();
+}
+
+export function drawNeck(ctx, sk, color) {
+  const b = sk.b;
+  ctx.save();
+  ctx.translate(sk.neck[0], sk.neck[1]);
+  ctx.rotate(sk.a.head * DEG);
+  const w0 = b.headR * 0.66, w1 = b.headR * 0.5, h = b.neck + b.headR * 0.5;
+  ctx.beginPath(); ctx.moveTo(-w0, 3); ctx.quadraticCurveTo(-w1, -h * 0.4, -w1, -h); ctx.lineTo(w1, -h); ctx.quadraticCurveTo(w1, -h * 0.4, w0, 3); ctx.closePath();
+  ctx.fillStyle = color; ctx.fill();
+  ctx.fillStyle = SHADOW; ctx.fillRect(-w0, -h, w0 * 0.8, h + 3);
+  ctx.fillStyle = 'rgba(26,10,58,0.3)'; ctx.fillRect(-w1, -h, w1 * 2, 2.5);
   ctx.restore();
 }
 
 export function drawHand(ctx, at, ang, style, part, b, f, dim) {
-  const r = b.handR;
-  const c = dim === 1 ? part.c : shade(part.c, dim);
+  const r = b.handR * (style === 'open' || style === 'palm' ? 0.9 : 1.0);
+  const c = part.c, edge = shade(c, 0.38);
+  const s = litSide(ang);
   ctx.save();
   toLocal(ctx, at, ang);
-  ctx.fillStyle = matFill(ctx, part.c, r, dim);
+  ctx.lineWidth = 0.8; ctx.strokeStyle = edge;
+  const fill = (fn) => { ctx.beginPath(); fn(); ctx.fillStyle = c; ctx.fill(); ctx.save(); ctx.clip(); ctx.translate(-s * r * 1.1, 0); ctx.beginPath(); fn(); ctx.fillStyle = SHADOW; ctx.fill(); ctx.restore(); ctx.beginPath(); fn(); ctx.stroke(); };
   if (style === 'open' || style === 'palm') {
-    ctx.beginPath();
-    ctx.ellipse(0, r * 0.4, r * 0.9, r * 1.1, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = shade(c, 0.85);
-    for (let i = -1; i <= 2; i++) {
-      ctx.beginPath();
-      ctx.ellipse(i * r * 0.42 - r * 0.15, r * 1.5, r * 0.22, r * 0.62, 0, 0, Math.PI * 2);
-      ctx.fill();
+    fill(() => { ctx.ellipse(0, r * 0.55, r * 0.95, r * 1.05, 0, 0, Math.PI * 2); });
+    for (let i = 0; i < 4; i++) {
+      const x = -r * 0.72 + i * r * 0.48;
+      fill(() => { ctx.ellipse(x, r * 1.75 + (i === 1 || i === 2 ? r * 0.15 : 0), r * 0.24, r * 0.62, (i - 1.5) * 0.12, 0, Math.PI * 2); });
     }
-    ctx.beginPath(); ctx.ellipse(r * 0.95, r * 0.6, r * 0.22, r * 0.55, -0.6, 0, Math.PI * 2); ctx.fill();
+    fill(() => { ctx.ellipse(r * 1.0, r * 0.75, r * 0.26, r * 0.6, -0.7, 0, Math.PI * 2); });
   } else if (style === 'point') {
-    ctx.beginPath(); ctx.ellipse(0, r * 0.4, r * 0.85, r, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = shade(c, 0.9);
-    ctx.fillRect(-r * 0.25, r * 0.8, r * 0.5, r * 1.6);
+    fill(() => { ctx.ellipse(0, r * 0.5, r * 0.9, r * 1.0, 0, 0, Math.PI * 2); });
+    fill(() => { ctx.ellipse(-r * 0.2, r * 1.9, r * 0.24, r * 0.85, 0, 0, Math.PI * 2); });
   } else if (style === 'claw' || style === 'talon') {
-    ctx.beginPath(); ctx.ellipse(0, r * 0.4, r, r * 1.05, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = shade(c, 0.6); ctx.lineWidth = 1.4;
-    for (let i = -1; i <= 1; i++) {
-      ctx.beginPath(); ctx.moveTo(i * r * 0.5, r); ctx.quadraticCurveTo(i * r * 0.7, r * 1.9, i * r * 0.4 + r * 0.4, r * 2.4); ctx.stroke();
-    }
-  } else { // fist
-    ctx.beginPath();
-    ctx.ellipse(0, r * 0.45, r * 1.02, r * 1.08, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.moveTo(-r * 0.7, r * 0.9); ctx.lineTo(r * 0.7, r * 0.9); ctx.stroke();
+    fill(() => { ctx.ellipse(0, r * 0.5, r, r * 1.05, 0, 0, Math.PI * 2); });
+    ctx.strokeStyle = edge; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+    for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(i * r * 0.5, r * 1.1); ctx.quadraticCurveTo(i * r * 0.75, r * 2.0, i * r * 0.4 + r * 0.45, r * 2.5); ctx.stroke(); }
+    ctx.strokeStyle = c; ctx.lineWidth = 0.8;
+    for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(i * r * 0.5, r * 1.1); ctx.quadraticCurveTo(i * r * 0.75, r * 2.0, i * r * 0.4 + r * 0.45, r * 2.5); ctx.stroke(); }
+  } else {
+    // fist: chunky block with knuckle ridge and wrapped thumb
+    fill(() => { ctx.roundRect(-r * 1.0, -r * 0.1, r * 2.0, r * 2.05, r * 0.6); });
+    ctx.strokeStyle = 'rgba(26,10,58,0.4)'; ctx.lineWidth = 0.7;
+    ctx.beginPath(); for (let i = 1; i < 4; i++) { ctx.moveTo(-r + i * r * 0.5, r * 1.3); ctx.lineTo(-r + i * r * 0.5, r * 1.9); } ctx.stroke();
+    ctx.fillStyle = 'rgba(255,248,228,0.3)'; ctx.fillRect(-r * 0.8, r * 1.55, r * 1.6, r * 0.25);
+    fill(() => { ctx.ellipse(r * 0.75 * s, r * 0.85, r * 0.32, r * 0.62, 0.2 * s, 0, Math.PI * 2); });
   }
   if (part.pat) part.pat(ctx, r, style, f, dim);
+  if (dim < 1) { ctx.globalCompositeOperation = 'source-atop'; dimOverlay(ctx, dim); }
   ctx.restore();
 }
 
 export function drawFoot(ctx, at, shinAng, footAng, part, b, f, dim) {
-  const L = b.footL, h = b.footH;
+  const L = b.footL * 1.08, h = b.footH * 1.1;
   ctx.save();
   ctx.translate(at[0], at[1]);
-  // align local +x with the foot direction
   ctx.rotate(-(footAng - 90) * DEG);
   const type = part.type || 'boot';
-  ctx.beginPath();
-  if (type === 'bare' || type === 'paw') {
-    ctx.moveTo(-3, -h); ctx.quadraticCurveTo(L * 0.4, -h * 0.9, L, -1);
-    ctx.quadraticCurveTo(L + 1, 1, L * 0.7, 1.5); ctx.lineTo(-4, 1.5); ctx.quadraticCurveTo(-5, -2, -3, -h);
-  } else if (type === 'heel') {
-    ctx.moveTo(-3, -h - 1); ctx.quadraticCurveTo(L * 0.6, -h * 0.4, L * 0.95, 0);
-    ctx.lineTo(L * 0.5, 1); ctx.lineTo(-1, -1); ctx.lineTo(-2, 2); ctx.lineTo(-4, 2); ctx.lineTo(-4, -h);
-  } else if (type === 'root') {
-    ctx.moveTo(-4, -h); ctx.lineTo(L * 0.9, -2); ctx.lineTo(L * 1.15, 1); ctx.lineTo(L * 0.6, 0.5); ctx.lineTo(L * 0.8, 2); ctx.lineTo(-5, 2); ctx.closePath();
-  } else {
-    ctx.moveTo(-4, -h - 1); ctx.quadraticCurveTo(L * 0.5, -h, L, -1.5);
-    ctx.quadraticCurveTo(L + 1.5, 1, L * 0.8, 2); ctx.lineTo(-5, 2); ctx.quadraticCurveTo(-6, -2, -4, -h - 1);
-  }
-  ctx.closePath();
-  const g = ctx.createLinearGradient(0, -h, 0, 2);
-  const c = dim === 1 ? part.c : shade(part.c, dim);
-  g.addColorStop(0, shade(c, 1.2)); g.addColorStop(1, shade(c, 0.6));
-  ctx.fillStyle = g;
-  ctx.fill();
-  if (type === 'boot' && part.sole !== false) {
-    ctx.fillStyle = shade(c, 0.45);
-    ctx.fillRect(-5, 0.6, L + 4, 1.6);
-  }
+  const path = () => {
+    ctx.beginPath();
+    if (type === 'bare' || type === 'paw') {
+      ctx.moveTo(-3, -h); ctx.quadraticCurveTo(L * 0.4, -h * 0.95, L, -1.5);
+      ctx.quadraticCurveTo(L + 1.5, 1.5, L * 0.7, 1.8); ctx.lineTo(-4, 1.8); ctx.quadraticCurveTo(-6, -2, -3, -h);
+    } else if (type === 'heel') {
+      ctx.moveTo(-3, -h - 1); ctx.quadraticCurveTo(L * 0.6, -h * 0.4, L * 0.95, 0);
+      ctx.lineTo(L * 0.5, 1); ctx.lineTo(-1, -1); ctx.lineTo(-2, 2.5); ctx.lineTo(-4.5, 2.5); ctx.lineTo(-4.5, -h);
+    } else if (type === 'root') {
+      ctx.moveTo(-4, -h); ctx.lineTo(L * 0.9, -2); ctx.lineTo(L * 1.15, 1); ctx.lineTo(L * 0.6, 0.5); ctx.lineTo(L * 0.8, 2); ctx.lineTo(-5, 2);
+    } else {
+      ctx.moveTo(-4.5, -h - 2); ctx.quadraticCurveTo(L * 0.25, -h - 1, L * 0.55, -h * 0.55);
+      ctx.quadraticCurveTo(L + 1, -h * 0.35, L + 1, 0); ctx.quadraticCurveTo(L + 1, 2, L * 0.8, 2.2); ctx.lineTo(-5.5, 2.2); ctx.quadraticCurveTo(-6.5, -2, -4.5, -h - 2);
+    }
+    ctx.closePath();
+  };
+  path();
+  ctx.fillStyle = part.c; ctx.fill();
+  ctx.save(); ctx.clip();
+  if (type === 'boot' && part.sole !== false) { ctx.fillStyle = shade(part.c, 0.4); ctx.fillRect(-7, 0.4, L + 9, 2.4); }
   if (part.pat) part.pat(ctx, L, h, f, dim);
+  ctx.fillStyle = SHADOW; ctx.fillRect(-8, -h * 0.25, L + 12, h + 4);
+  ctx.fillStyle = HILITE; ctx.beginPath(); ctx.ellipse(L * 0.35, -h * 0.85, L * 0.4, h * 0.25, 0.15, 0, Math.PI * 2); ctx.fill();
+  dimOverlay(ctx, dim);
   ctx.restore();
+  path(); ctx.strokeStyle = shade(part.c, 0.38); ctx.lineWidth = 0.9; ctx.stroke();
+  ctx.restore();
+}
+
+// head shading overlay applied after each character's head painter
+export function shadeHead(ctx, r, pathFn) {
+  ctx.save(); pathFn(ctx, r); ctx.clip();
+  ctx.beginPath(); ctx.ellipse(-r * 0.75, r * 0.15, r * 0.75, r * 1.4, 0.15, 0, Math.PI * 2); ctx.fillStyle = SHADOW; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r * 0.35, r * 1.15, r * 0.9, r * 0.35, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(26,10,58,0.25)'; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r * 0.35, -r * 0.75, r * 0.5, r * 0.28, -0.3, 0, Math.PI * 2); ctx.fillStyle = HILITE; ctx.fill();
+  ctx.restore();
+  ctx.save(); pathFn(ctx, r); ctx.strokeStyle = 'rgba(20,8,30,0.55)'; ctx.lineWidth = 0.8; ctx.stroke(); ctx.restore();
 }
 
 // flowing cloth: capes, coats, robes. `swing` > 0 blows it backward
@@ -447,52 +536,49 @@ export function drawWeapon(ctx, sk, kind, len, f, look) {
 export function drawCharacter(ctx, sk, f, look) {
   const b = sk.b, A = sk.a, p = sk.p;
   const P = look.parts;
-  const DIM = 0.74;
+  const DIM = 0.8;
   const hide = p.hide || look.hide;
   if (look.back) look.back(ctx, sk, f);
   if (look.cape) drawCape(ctx, sk, look.cape, f);
   if (look.hair && !look.hairFront) drawHair(ctx, sk, look.hair, f);
   // back arm
   if (!hide || hide.indexOf('armB') < 0) {
-    limb(ctx, sk.shB, A.uaB, b.upperArm, b.wUA, b.wFA + 0.6, P.upperArm, f, DIM, b.bUA);
-    limb(ctx, sk.elB, A.faB, b.foreArm, b.wFA, b.wFA * 0.78, P.foreArm, f, DIM, b.bFA);
+    limb(ctx, sk.shB, A.uaB, b.upperArm, b.wUA, b.wFA + 0.6, P.upperArm, f, DIM, b.bUA, 'upperArm');
+    limb(ctx, sk.elB, A.faB, b.foreArm, b.wFA, b.wFA * 0.78, P.foreArm, f, DIM, b.bFA, 'foreArm');
     drawHand(ctx, sk.haB, A.faB, p.hB || look.hand || 'fist', P.hand, b, f, DIM);
   }
   // back leg
-  limb(ctx, sk.hipB, A.thB, b.thigh, b.wTh, b.wSh + 0.8, P.thigh, f, DIM, b.bTh);
-  limb(ctx, sk.knB, A.snB, b.shin, b.wSh, b.wSh * 0.8, P.shin, f, DIM, b.bSh);
+  limb(ctx, sk.hipB, A.thB, b.thigh, b.wTh, b.wSh + 0.8, P.thigh, f, DIM, b.bTh, 'thigh');
+  limb(ctx, sk.knB, A.snB, b.shin, b.wSh, b.wSh * 0.8, P.shin, f, DIM, b.bSh, 'shin');
   drawFoot(ctx, sk.ftB, A.snB, A.fB, P.foot, b, f, DIM);
   if (look.midBack) look.midBack(ctx, sk, f);
+  drawNeck(ctx, sk, look.neck || P.torso.c);
   drawTorso(ctx, sk, P.torso, f, look);
-  // front leg
-  limb(ctx, sk.hipF, A.thF, b.thigh, b.wTh, b.wSh + 0.8, P.thigh, f, 1, b.bTh);
-  limb(ctx, sk.knF, A.snF, b.shin, b.wSh, b.wSh * 0.8, P.shin, f, 1, b.bSh);
+  // front leg, then re-cover the hip joint with the pelvis
+  limb(ctx, sk.hipF, A.thF, b.thigh, b.wTh, b.wSh + 0.8, P.thigh, f, 1, b.bTh, 'thigh');
+  limb(ctx, sk.knF, A.snF, b.shin, b.wSh, b.wSh * 0.8, P.shin, f, 1, b.bSh, 'shin');
   drawFoot(ctx, sk.ftF, A.snF, A.fF, P.foot, b, f, 1);
+  if (A.thF > -30 && A.thF < 70) drawTorso(ctx, sk, P.torso, f, look, true);
   if (look.skirt) look.skirt(ctx, sk, f);
-  // neck + head
-  ctx.save();
-  ctx.translate(sk.neck[0], sk.neck[1]);
-  ctx.rotate(A.head * DEG);
-  ctx.fillStyle = look.neck || P.torso.c;
-  ctx.fillRect(-b.headR * 0.42, -b.neck - 3, b.headR * 0.84, b.neck + 5);
-  ctx.restore();
+  // head
   ctx.save();
   ctx.translate(sk.head[0], sk.head[1]);
   ctx.rotate(A.head * DEG);
   look.head(ctx, b.headR, f, p.face, sk);
+  if (!look.noHeadShade) shadeHead(ctx, b.headR, look.headPath || headPath);
   ctx.restore();
   if (look.hair && look.hairFront) drawHair(ctx, sk, look.hair, f);
   if (look.mid) look.mid(ctx, sk, f);
   // front arm
-  limb(ctx, sk.shF, A.uaF, b.upperArm, b.wUA, b.wFA + 0.6, P.upperArm, f, 1, b.bUA);
-  limb(ctx, sk.elF, A.faF, b.foreArm, b.wFA, b.wFA * 0.78, P.foreArm, f, 1, b.bFA);
+  limb(ctx, sk.shF, A.uaF, b.upperArm, b.wUA, b.wFA + 0.6, P.upperArm, f, 1, b.bUA, 'upperArm');
+  limb(ctx, sk.elF, A.faF, b.foreArm, b.wFA, b.wFA * 0.78, P.foreArm, f, 1, b.bFA, 'foreArm');
   drawWeapon(ctx, sk, p.wpn, p.wl, f, look);
   drawHand(ctx, sk.haF, A.faF, p.hF || look.hand || 'fist', P.hand, b, f, 1);
   if (look.front) look.front(ctx, sk, f);
 }
 
 // ------------------------------------------------------------------ pixel sprite buffer
-export const SPR_W = 420, SPR_H = 360, SPR_OX = 210, SPR_OY = 300;
+export const SPR_W = 520, SPR_H = 440, SPR_OX = 260, SPR_OY = 370;
 
 export class SpriteBuffer {
   constructor() {
@@ -517,7 +603,7 @@ export class SpriteBuffer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     // pixel pass over the bounding region
     const bb = bounds(sk);
-    const m = 70 * scale;
+    const m = 80 * scale;
     let x0 = Math.floor(SPR_OX + Math.min(bb[0] * facing, bb[2] * facing) * scale - m);
     let x1 = Math.ceil(SPR_OX + Math.max(bb[0] * facing, bb[2] * facing) * scale + m);
     let y0 = Math.floor(SPR_OY + bb[1] * scale - m), y1 = Math.ceil(SPR_OY + bb[3] * scale + 30);
@@ -528,7 +614,7 @@ export class SpriteBuffer {
     const d = img.data;
     const n = w * h;
     const solid = new Uint8Array(n);
-    const Q = 22;
+    const Q = 10;
     for (let i = 0, j = 0; i < n; i++, j += 4) {
       if (d[j + 3] > 105) {
         solid[i] = 1;
@@ -538,15 +624,15 @@ export class SpriteBuffer {
         d[j + 2] = Math.min(255, Math.round(d[j + 2] / Q) * Q);
       } else d[j + 3] = 0;
     }
-    const oc = look.outlineRGB || [12, 8, 16];
+    // colored "sel-out" outline: each edge pixel takes a deep shade of the color it borders
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
         const i = y * w + x;
         if (solid[i]) continue;
-        if (solid[i - 1] || solid[i + 1] || solid[i - w] || solid[i + w]) {
-          const j = i * 4;
-          d[j] = oc[0]; d[j + 1] = oc[1]; d[j + 2] = oc[2]; d[j + 3] = 255;
-        }
+        const n = solid[i - 1] ? i - 1 : solid[i + 1] ? i + 1 : solid[i - w] ? i - w : solid[i + w] ? i + w : -1;
+        if (n < 0) continue;
+        const j = i * 4, k = n * 4;
+        d[j] = d[k] * 0.22 + 6; d[j + 1] = d[k + 1] * 0.2 + 4; d[j + 2] = d[k + 2] * 0.24 + 12; d[j + 3] = 255;
       }
     }
     if (tint) {

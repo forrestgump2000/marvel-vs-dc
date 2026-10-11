@@ -4,85 +4,97 @@ import { shade, hexRgb } from '../util.js';
 
 export function headPath(ctx, r, jaw = 1) {
   ctx.beginPath();
-  ctx.moveTo(-r * 0.82, -r * 0.5);
-  ctx.quadraticCurveTo(-r * 0.6, -r * 1.12, r * 0.05, -r * 1.08);
-  ctx.quadraticCurveTo(r * 0.8, -r * 1.0, r * 0.9, -r * 0.35);
-  ctx.lineTo(r * 1.0, r * 0.12);
-  ctx.quadraticCurveTo(r * 0.98, r * 0.62 * jaw, r * 0.72, r * 0.82 * jaw);
-  ctx.quadraticCurveTo(r * 0.4, r * 1.08 * jaw, r * 0.05, r * 1.0 * jaw);
-  ctx.quadraticCurveTo(-r * 0.55, r * 0.9, -r * 0.82, r * 0.25);
+  ctx.moveTo(-r * 0.86, -r * 0.42);
+  ctx.quadraticCurveTo(-r * 0.74, -r * 1.16, r * 0.08, -r * 1.12);
+  ctx.quadraticCurveTo(r * 0.84, -r * 1.04, r * 0.95, -r * 0.44);
+  ctx.lineTo(r * 0.99, -r * 0.24);
+  ctx.lineTo(r * 1.08, r * 0.12);
+  ctx.lineTo(r * 0.97, r * 0.3);
+  ctx.quadraticCurveTo(r * 1.0, r * 0.55 * jaw, r * 0.9, r * 0.72 * jaw);
+  ctx.quadraticCurveTo(r * 0.8, r * 0.98 * jaw, r * 0.42, r * 1.0 * jaw);
+  ctx.lineTo(-r * 0.12, r * 0.82 * jaw);
+  ctx.quadraticCurveTo(-r * 0.52, r * 0.64 * jaw, -r * 0.64, r * 0.3);
+  ctx.quadraticCurveTo(-r * 0.96, r * 0.12, -r * 0.86, -r * 0.42);
   ctx.closePath();
 }
 
 export function fillHead(ctx, r, c, jaw = 1) {
   headPath(ctx, r, jaw);
-  const g = ctx.createRadialGradient(r * 0.3, -r * 0.4, r * 0.2, 0, 0, r * 1.3);
-  g.addColorStop(0, shade(c, 1.22));
-  g.addColorStop(0.6, c);
-  g.addColorStop(1, shade(c, 0.6));
-  ctx.fillStyle = g;
+  ctx.fillStyle = c;
   ctx.fill();
 }
 
 export function ear(ctx, r, c) {
-  ctx.fillStyle = shade(c, 0.85);
-  ctx.beginPath();
-  ctx.ellipse(-r * 0.15, r * 0.05, r * 0.2, r * 0.3, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillStyle = c;
+  ctx.beginPath(); ctx.ellipse(-r * 0.2, r * 0.08, r * 0.2, r * 0.3, 0.15, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = shade(c, 0.55); ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.arc(-r * 0.2, r * 0.08, r * 0.12, -1.2, 1.6); ctx.stroke();
 }
 
 // human face details: eye, brow, nose, mouth
 export function face(ctx, r, opt = {}) {
   const skin = opt.skin || '#d9a07a';
   const expr = opt.expr || 'norm';
+  const dark = shade(skin, 0.5);
   ear(ctx, r, skin);
-  // eye
+  // cheekbone + eye-socket shadow
+  ctx.fillStyle = 'rgba(60,20,30,0.18)';
+  ctx.beginPath(); ctx.ellipse(r * 0.55, -r * 0.14, r * 0.34, r * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(60,20,30,0.25)'; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(r * 0.25, r * 0.22); ctx.quadraticCurveTo(r * 0.5, r * 0.3, r * 0.62, r * 0.12); ctx.stroke();
   if (!opt.noEyes) {
-    ctx.fillStyle = opt.eyeWhite || '#f4f0ea';
-    ctx.beginPath(); ctx.ellipse(r * 0.55, -r * 0.18, r * 0.2, r * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = opt.eyeWhite || '#f6f2ea';
+    ctx.beginPath(); ctx.moveTo(r * 0.38, -r * 0.16); ctx.quadraticCurveTo(r * 0.58, -r * 0.32, r * 0.8, -r * 0.18); ctx.quadraticCurveTo(r * 0.6, -r * 0.04, r * 0.38, -r * 0.16); ctx.fill();
     ctx.fillStyle = opt.iris || '#2a3140';
-    ctx.fillRect(r * 0.6, -r * 0.27, r * 0.14, r * 0.18);
+    ctx.beginPath(); ctx.arc(r * 0.64, -r * 0.17, r * 0.1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#0a0a10'; ctx.fillRect(r * 0.62, -r * 0.2, r * 0.06, r * 0.07);
+    ctx.strokeStyle = '#1a0e0a'; ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.moveTo(r * 0.36, -r * 0.17); ctx.quadraticCurveTo(r * 0.58, -r * 0.34, r * 0.82, -r * 0.2); ctx.stroke();
   }
-  // brow
-  ctx.strokeStyle = opt.brow || '#3a2418';
-  ctx.lineWidth = Math.max(1, r * 0.12);
+  // brow (tapered)
+  ctx.fillStyle = opt.brow || '#3a2418';
   ctx.beginPath();
-  if (expr === 'shout' || expr === 'angry') { ctx.moveTo(r * 0.3, -r * 0.48); ctx.lineTo(r * 0.85, -r * 0.3); }
-  else { ctx.moveTo(r * 0.32, -r * 0.42); ctx.lineTo(r * 0.85, -r * 0.4); }
-  ctx.stroke();
-  // nose
-  ctx.fillStyle = shade(skin, 0.8);
-  ctx.beginPath(); ctx.moveTo(r * 0.9, -r * 0.1); ctx.lineTo(r * 1.1, r * 0.25); ctx.lineTo(r * 0.85, r * 0.3); ctx.fill();
+  if (expr === 'shout' || expr === 'angry') { ctx.moveTo(r * 0.3, -r * 0.5); ctx.lineTo(r * 0.92, -r * 0.3); ctx.lineTo(r * 0.9, -r * 0.22); ctx.lineTo(r * 0.32, -r * 0.4); }
+  else { ctx.moveTo(r * 0.3, -r * 0.42); ctx.quadraticCurveTo(r * 0.6, -r * 0.52, r * 0.92, -r * 0.4); ctx.lineTo(r * 0.9, -r * 0.33); ctx.quadraticCurveTo(r * 0.6, -r * 0.43, r * 0.32, -r * 0.34); }
+  ctx.closePath(); ctx.fill();
+  // nose: bridge highlight + underside shadow
+  ctx.fillStyle = 'rgba(255,240,220,0.35)'; ctx.fillRect(r * 0.9, -r * 0.18, r * 0.07, r * 0.3);
+  ctx.fillStyle = dark; ctx.beginPath(); ctx.moveTo(r * 1.05, r * 0.16); ctx.lineTo(r * 0.82, r * 0.3); ctx.lineTo(r * 0.98, r * 0.31); ctx.fill();
   // mouth
-  ctx.strokeStyle = shade(skin, 0.55);
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = shade(skin, 0.42); ctx.lineWidth = 1;
   ctx.beginPath();
   if (expr === 'shout') {
-    ctx.fillStyle = '#3a0d0d';
-    ctx.ellipse(r * 0.72, r * 0.58, r * 0.2, r * 0.16, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3a0d0d'; ctx.ellipse(r * 0.74, r * 0.56, r * 0.2, r * 0.17, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillRect(r * 0.6, r * 0.42, r * 0.28, r * 0.07);
   } else if (expr === 'hurt') {
-    ctx.moveTo(r * 0.5, r * 0.6); ctx.lineTo(r * 0.85, r * 0.52); ctx.stroke();
+    ctx.moveTo(r * 0.52, r * 0.6); ctx.lineTo(r * 0.7, r * 0.52); ctx.lineTo(r * 0.88, r * 0.58); ctx.stroke();
   } else {
-    ctx.moveTo(r * 0.55, r * 0.55); ctx.lineTo(r * 0.88, r * 0.52); ctx.stroke();
+    ctx.moveTo(r * 0.56, r * 0.54); ctx.quadraticCurveTo(r * 0.74, r * 0.57, r * 0.9, r * 0.5); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,240,220,0.3)'; ctx.fillRect(r * 0.62, r * 0.6, r * 0.22, r * 0.06);
   }
-  if (opt.lips) { ctx.fillStyle = opt.lips; ctx.fillRect(r * 0.6, r * 0.5, r * 0.3, r * 0.12); }
-  if (opt.stubble) { ctx.fillStyle = 'rgba(40,25,20,0.35)'; ctx.beginPath(); ctx.ellipse(r * 0.45, r * 0.65, r * 0.5, r * 0.35, 0, 0, Math.PI * 2); ctx.fill(); }
+  if (opt.lips) { ctx.fillStyle = opt.lips; ctx.beginPath(); ctx.ellipse(r * 0.75, r * 0.56, r * 0.16, r * 0.07, 0, 0, Math.PI * 2); ctx.fill(); }
+  if (opt.stubble) { ctx.fillStyle = 'rgba(40,25,20,0.32)'; ctx.beginPath(); ctx.moveTo(r * 0.0, r * 0.4); ctx.quadraticCurveTo(r * 0.5, r * 1.1, r * 0.95, r * 0.6); ctx.lineTo(r * 0.95, r * 0.4); ctx.quadraticCurveTo(r * 0.5, r * 0.8, r * 0.0, r * 0.4); ctx.fill(); }
 }
 
-// short hair cap on top/back of the head
+// clumpy hair cap with highlight streaks
 export function hairCap(ctx, r, c, style = 'short') {
   ctx.fillStyle = c;
   ctx.beginPath();
-  ctx.moveTo(-r * 0.9, r * 0.2);
-  ctx.quadraticCurveTo(-r * 1.0, -r * 1.0, r * 0.1, -r * 1.2);
-  ctx.quadraticCurveTo(r * 0.85, -r * 1.15, r * 0.95, -r * 0.55);
-  if (style === 'curl') { ctx.quadraticCurveTo(r * 0.6, -r * 0.65, r * 0.65, -r * 0.2); ctx.quadraticCurveTo(r * 0.45, -r * 0.5, r * 0.3, -r * 0.7); }
-  ctx.quadraticCurveTo(r * 0.2, -r * 0.6, -r * 0.2, -r * 0.62);
-  ctx.quadraticCurveTo(-r * 0.4, -r * 0.1, -r * 0.5, r * 0.3);
+  ctx.moveTo(-r * 0.92, r * 0.25);
+  ctx.quadraticCurveTo(-r * 1.08, -r * 0.6, -r * 0.7, -r * 1.05);
+  ctx.lineTo(-r * 0.55, -r * 1.3); ctx.lineTo(-r * 0.3, -r * 1.12);
+  ctx.lineTo(-r * 0.05, -r * 1.36); ctx.lineTo(r * 0.2, -r * 1.16);
+  ctx.lineTo(r * 0.52, -r * 1.3); ctx.quadraticCurveTo(r * 0.95, -r * 1.05, r * 1.0, -r * 0.52);
+  if (style === 'curl') { ctx.quadraticCurveTo(r * 0.75, -r * 0.62, r * 0.7, -r * 0.25); ctx.quadraticCurveTo(r * 0.5, -r * 0.45, r * 0.42, -r * 0.66); }
+  else ctx.lineTo(r * 0.72, -r * 0.62);
+  ctx.quadraticCurveTo(r * 0.2, -r * 0.68, -r * 0.18, -r * 0.6);
+  ctx.quadraticCurveTo(-r * 0.36, -r * 0.1, -r * 0.46, r * 0.32);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = shade(c, 1.4);
-  ctx.fillRect(-r * 0.2, -r * 1.05, r * 0.6, r * 0.15);
+  ctx.strokeStyle = shade(c, 0.5); ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(-r * 0.6, -r * 0.4); ctx.quadraticCurveTo(-r * 0.4, -r * 0.9, r * 0.1, -r * 1.0); ctx.moveTo(-r * 0.7, 0); ctx.quadraticCurveTo(-r * 0.6, -r * 0.6, -r * 0.2, -r * 0.85); ctx.stroke();
+  ctx.strokeStyle = shade(c, 1.55); ctx.lineWidth = 1.1;
+  ctx.beginPath(); ctx.moveTo(-r * 0.2, -r * 1.02); ctx.quadraticCurveTo(r * 0.25, -r * 1.12, r * 0.6, -r * 0.95); ctx.stroke();
 }
 
 // big white mask lenses with dark rim
@@ -94,6 +106,7 @@ export function lens(ctx, r, rim = '#111', fill = '#f4f6ff', size = 1, angry = f
   ctx.beginPath(); ctx.ellipse(0, 0, r * 0.42 * size, r * 0.26 * size, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = fill;
   ctx.beginPath(); ctx.ellipse(0.4, 0, r * 0.32 * size, r * 0.17 * size, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(160,180,220,0.45)'; ctx.beginPath(); ctx.ellipse(0.4, r * 0.06 * size, r * 0.28 * size, r * 0.07 * size, 0, 0, Math.PI); ctx.fill();
   ctx.restore();
 }
 

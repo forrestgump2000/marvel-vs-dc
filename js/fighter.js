@@ -11,7 +11,7 @@ export class Fighter {
     this.B = built;
     this.team = team;
     this.slot = slot;
-    this.sc = 1.2 * (def.scale || 1);
+    this.sc = 1.5 * (def.scale || 1);
     this.maxHp = def.stats.hp || 1000;
     this.hp = this.maxHp;
     this.red = this.hp;

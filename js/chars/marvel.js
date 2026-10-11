@@ -24,7 +24,8 @@ const spidey = {
         ctx.beginPath(); ctx.moveTo(-b.wS - 2, -T * 0.86); ctx.lineTo(-b.wC * 0.5, -T * 0.7); ctx.lineTo(-b.wW * 0.6, -T * 0.12); ctx.lineTo(-b.wH - 2, 0); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(b.wS + 2, -T * 0.86); ctx.lineTo(b.wC * 0.5, -T * 0.7); ctx.lineTo(b.wW * 0.6, -T * 0.12); ctx.lineTo(b.wH + 2, 0); ctx.closePath(); ctx.fill();
         ctx.save(); ctx.translate(0, -T); webPattern(ctx, T * 0.9, b.wS, 'rgba(20,10,20,0.5)'); ctx.restore();
-        bandY(ctx, -T * 0.12, -T * 0.02, b.wH, SP_R);
+        bandY(ctx, -T * 0.12, -T * 0.03, b.wH, SP_R);
+        bandY(ctx, -T * 0.03, 12, b.wH, SP_B);
         spiderEmblem(ctx, 0, -T * 0.68, 7, '#140c12');
       }),
       upperArm: P(SP_R, (ctx, l, w) => webPattern(ctx, l, w)),
@@ -192,8 +193,7 @@ const hulk = {
     },
     head: (ctx, r, f, fc) => {
       fillHead(ctx, r, HK_G, 1.1);
-      hairCap(ctx, r * 1.05, '#16180f');
-      ctx.fillStyle = '#16180f'; ctx.fillRect(-r * 0.9, -r * 0.5, r * 0.5, r * 0.9);
+      hairCap(ctx, r * 1.02, '#16180f');
       face(ctx, r, { skin: HK_G, expr: fc || 'angry', brow: '#16180f', iris: '#3a7a1a' });
       ctx.fillStyle = '#ffffff'; ctx.fillRect(r * 0.5, r * 0.5, r * 0.4, r * 0.12);
     },
@@ -314,6 +314,7 @@ const scarlet = {
   stats: { hp: 900, walk: 2.2, back: 2.0, jump: 11, dash: 6, float: true, airdash: true, power: 1.0 },
   face: [0.52, 0.1], ai: 'zone',
   look: {
+    female: true,
     neck: SW_SKIN,
     hair: { c: '#7a2a1a', len: 26, base: 18, spread: 30, n: 6, w: 5, curl: 7 },
     parts: {
@@ -643,6 +644,7 @@ const storm = {
   stats: { hp: 900, walk: 2.4, back: 2.2, jump: 11.5, dash: 7, float: true, airdash: true, power: 1.0 },
   face: [0.5, 0.15], ai: 'zone',
   look: {
+    female: true,
     neck: ST_SKIN,
     cape: { c: '#3a3a4a', len: 74, w: 40, base: 8, lining: '#c8ccd8' },
     hair: { c: '#f4f4fa', len: 22, base: -10, spread: 70, n: 7, w: 6, curl: 8 },

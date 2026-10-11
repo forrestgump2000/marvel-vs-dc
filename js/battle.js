@@ -40,7 +40,7 @@ export class Battle {
     this.teams.forEach((team, side) => {
       const f = team.members[0];
       f.onField = true;
-      f.x = STAGE_W / 2 + (side ? 110 : -110);
+      f.x = STAGE_W / 2 + (side ? 135 : -135);
       f.facing = side ? -1 : 1;
       f.setState('intro', 'intro');
       team.members.forEach((m) => { m.facing = side ? -1 : 1; });
@@ -186,7 +186,7 @@ export class Battle {
       case 'jsquat':
         if (f.t >= 4) {
           const st = f.def.stats;
-          f.vy = -(st.jump || 11.5) * (f.superJump ? 1.3 : 1);
+          f.vy = -(st.jump || 11.5) * 1.12 * (f.superJump ? 1.28 : 1);
           f.vx = f.jumpDir * (st.jumpX || 3.4) * f.facing * (f.superJump ? 1.25 : 1);
           f.airborne = true; f.y = -1;
           f.airJumps = 0; f.airActs = 0;
@@ -373,6 +373,7 @@ export class Battle {
     this.superUser = f;
     this.cutins.push({ f, t: 0, side: f.team.side, name: m.name });
     this.sfx('hyper');
+    f.team.pad.rumble(400, 0.7, 0.9);
     this.flash('#fff', 0.5);
     this.fx.superFlash(f.x, f.y - 70, f.def.color);
     if (f.def.quotes && f.def.quotes.hyper) say(pick(f.def.quotes.hyper), { pitch: 0.8, rate: 1.1 });
@@ -692,6 +693,7 @@ export class Battle {
       if (h.chip || isProj || (att.move && att.move.kind !== 'normal')) this.damage(tgt, h.dmg * 0.15);
       this.fx.spark(px, py, 'block', '#9fd8ff', -dirTo);
       this.sfx('block');
+      tgt.team.pad.rumble(50, 0.1, 0.35);
       this.hitstop = Math.max(this.hitstop, 4);
       team.meter = Math.min(300, team.meter + h.dmg * 0.15);
       tgt.team.meter = Math.min(300, tgt.team.meter + h.dmg * 0.15);
@@ -751,6 +753,9 @@ export class Battle {
     this.hitstop = Math.max(this.hitstop, h.hs || 6);
     this.fx.spark(px, py, h.spark || 'small', h.sparkColor || att.def.color, sign(tgt.x - fromX) || att.facing, h.fxKind);
     this.sfx(h.sfx || 'hitL');
+    const heavyHit = (h.dmg || 0) >= 60 || h.launch || h.kd;
+    att.team.pad.rumble(heavyHit ? 90 : 50, heavyHit ? 0.4 : 0.15, heavyHit ? 0.7 : 0.45);
+    tgt.team.pad.rumble(heavyHit ? 160 : 80, heavyHit ? 1 : 0.55, 0.6);
     if ((h.dmg || 0) >= 60 || h.launch) this.shake(h.launch ? 6 : 5);
     if (tgt.hp <= 0) this.koFighter(tgt, att);
     return 'hit';
@@ -779,6 +784,7 @@ export class Battle {
     tgt.red = 0;
     this.slow = 50;
     this.sfx('ko');
+    this.teams.forEach((t) => t.pad.rumble(600, 1, 1));
     this.flash('#fff', 0.8);
     this.shake(12);
     const team = tgt.team;
@@ -1089,7 +1095,7 @@ export class Battle {
     for (const team of this.teams) for (const f of team.members) if (f.onField) {
       const [sx, sy] = toS(f.x, 0);
       const k = clamp(1 + f.y / 300, 0.3, 1);
-      ctx.beginPath(); ctx.ellipse(sx, sy + 1, 26 * f.sc * k, 5 * k, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(sx, sy + 1, 22 * f.sc * k, 5 * k, 0, 0, Math.PI * 2); ctx.fill();
     }
     if (this.superFreeze > 0 || this.cutins.some((c) => c.t < 40)) {
       ctx.fillStyle = 'rgba(0,0,20,0.55)'; ctx.fillRect(0, 0, W, H);

@@ -6,6 +6,7 @@ import { Battle } from './battle.js';
 import { Fighter } from './fighter.js';
 import { STAGES, getStage } from './stages.js';
 import { SPECIAL_INPUTS, HYPER_INPUTS } from './moves.js';
+import { SPR_OX, SPR_OY } from './rig.js';
 
 export const game = { scene: null, roster: [], built: {}, portraits: {}, pix: {}, frame: 0, difficulty: 1, last: null };
 export function go(scene) { game.scene = scene; if (scene.enter) scene.enter(); }
@@ -97,7 +98,7 @@ function drawPreview(ctx, f, x, y, facing, scale = 1.2) {
   f.animT++; f.animClock++;
   f.updatePose();
   const [rx, ry, rw, rh] = f.buf.render(f.sk, f, f.def.look, facing, scale * (f.def.scale || 1));
-  ctx.drawImage(f.buf.cv, rx, ry, rw, rh, Math.round(x - 210 + rx), Math.round(y - 300 + ry), rw, rh);
+  ctx.drawImage(f.buf.cv, rx, ry, rw, rh, Math.round(x - SPR_OX + rx), Math.round(y - SPR_OY + ry), rw, rh);
   if (f.def.look.glow) {
     ctx.save(); ctx.translate(x, y); ctx.scale(facing * scale, scale); ctx.globalCompositeOperation = f.def.look.glowNormal ? 'source-over' : 'lighter'; f.def.look.glow(ctx, f.sk, f, game.frame); ctx.restore();
   }
@@ -152,39 +153,81 @@ export class MenuScene {
     menuList(ctx, this.items, this.sel, W / 2, 160);
     const tips = ['Pick 2 heroes, pick the 2 you want to fight, and battle the CPU.', 'Two players on one keyboard or with gamepads.', 'Practice combos: infinite health and hyper meter.', 'Controls, combos, tags, assists and hypers.', 'Music, sound, announcer and CPU difficulty.'];
     text(ctx, tips[this.sel], W / 2, 330, { size: 6, align: 'center', color: '#fff' });
+    psGlyph(ctx, 'cross', W / 2 - 92, 345, 5); text(ctx, '/ U  SELECT', W / 2 - 84, 348, { size: 5, color: '#aaa' });
+    psGlyph(ctx, 'circle', W / 2 + 22, 345, 5); text(ctx, '/ K  BACK', W / 2 + 30, 348, { size: 5, color: '#aaa' });
   }
 }
 
-// ======================================================================= HELP
+// PlayStation-style face-button glyphs (the pixel font has no symbols for them)
+export function psGlyph(ctx, kind, x, y, r = 7) {
+  ctx.save();
+  ctx.fillStyle = '#14141e'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#3a3a4a'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.lineWidth = 1.6; const k = r * 0.48;
+  if (kind === 'cross') { ctx.strokeStyle = '#8ab8ff'; ctx.beginPath(); ctx.moveTo(x - k, y - k); ctx.lineTo(x + k, y + k); ctx.moveTo(x + k, y - k); ctx.lineTo(x - k, y + k); ctx.stroke(); }
+  else if (kind === 'circle') { ctx.strokeStyle = '#ff6a7a'; ctx.beginPath(); ctx.arc(x, y, k, 0, Math.PI * 2); ctx.stroke(); }
+  else if (kind === 'square') { ctx.strokeStyle = '#ff8ad8'; ctx.strokeRect(x - k, y - k, k * 2, k * 2); }
+  else if (kind === 'triangle') { ctx.strokeStyle = '#4ae0a8'; ctx.beginPath(); ctx.moveTo(x, y - k * 1.1); ctx.lineTo(x + k, y + k * 0.75); ctx.lineTo(x - k, y + k * 0.75); ctx.closePath(); ctx.stroke(); }
+  ctx.restore();
+}
+function pill(ctx, label, x, y) {
+  ctx.save();
+  ctx.font = '6px "Press Start 2P", monospace';
+  const w = ctx.measureText(label).width + 8;
+  ctx.fillStyle = '#14141e'; ctx.strokeStyle = '#4a4a5a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x - w / 2, y - 6, w, 12, 5); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  text(ctx, label, x, y + 3, { size: 6, align: 'center', color: '#fff', shadow: false });
+  return w;
+}
+
 export class HelpScene {
   enter() { this.t = 0; this.page = 0; }
   update() {
     this.t++;
-    if (P1().pressed('right') || P1().pressed('left')) { this.page = 1 - this.page; sfx('cursor'); }
+    if (P1().pressed('right')) { this.page = (this.page + 1) % 3; sfx('cursor'); }
+    if (P1().pressed('left')) { this.page = (this.page + 2) % 3; sfx('cursor'); }
     if (anyBack() || anyConfirm()) { sfx('back'); go(new MenuScene()); }
   }
   draw(ctx) {
     backdrop(ctx, this.t, 0.65);
-    text(ctx, this.page ? 'HOW TO FIGHT' : 'CONTROLS', W / 2, 30, { size: 16, align: 'center', grad: ['#fff', '#ffd000'], stroke: '#000', strokeW: 4 });
-    const L = (s, x, y, c = '#fff', size = 7) => text(ctx, s, x, y, { size, color: c });
-    if (!this.page) {
-      L('PLAYER 1 (KEYBOARD)', 30, 62, '#ff6a6a', 8);
+    const titles = ['KEYBOARD', 'PS5 CONTROLLER & TOUCH', 'HOW TO FIGHT'];
+    text(ctx, titles[this.page], W / 2, 30, { size: 14, align: 'center', grad: ['#fff', '#ffd000'], stroke: '#000', strokeW: 4 });
+    const L = (s2, x, y, c = '#fff', size = 7) => text(ctx, s2, x, y, { size, color: c });
+    if (this.page === 0) {
+      L('PLAYER 1', 30, 62, '#ff6a6a', 8);
       [['MOVE', 'W A S D'], ['LIGHT / HEAVY PUNCH', 'U / I'], ['LIGHT / HEAVY KICK', 'J / K'], ['SPECIAL', 'O'], ['HYPER', 'L'], ['ASSIST', 'Y'], ['TAG', 'H'], ['TAUNT', 'T'], ['PAUSE', 'ENTER / ESC']].forEach(([a, b], i) => { L(a, 30, 82 + i * 15, '#ddd', 6); L(b, 200, 82 + i * 15, '#ffe06a', 6); });
-      L('PLAYER 2 (KEYBOARD)', 340, 62, '#6aa8ff', 8);
+      L('PLAYER 2', 340, 62, '#6aa8ff', 8);
       [['MOVE', 'ARROW KEYS'], ['PUNCH', ', .  or NUM 4 5'], ['KICK', 'M N  or NUM 1 2'], ['SPECIAL', '/  or NUM 6'], ['HYPER', ';  or NUM 3'], ['ASSIST', '[  or NUM 7'], ['TAG', ']  or NUM 8'], ['TAUNT', '\\  or NUM 9'], ['PAUSE', 'R-SHIFT / NUM ENTER']].forEach(([a, b], i) => { L(a, 340, 82 + i * 15, '#ddd', 6); L(b, 470, 82 + i * 15, '#ffe06a', 6); });
-      L('GAMEPADS: X/Y PUNCH  A/B KICK  RB SPECIAL  RT HYPER  LB ASSIST  LT TAG', 30, 238, '#9fe8ff', 6);
-      L('TOUCH: ON-SCREEN STICK AND BUTTONS APPEAR ON PHONES/TABLETS', 30, 254, '#9fe8ff', 6);
       L('MOTION INPUTS: QCF+P (D,DF,F)  QCB+P (D,DB,B)  DP+P (F,D,DF)  QCF+K', 30, 280, '#fff', 6);
       L('EASY MODE: SPECIAL + (NONE / BACK / UP / DOWN)   HYPER + (NONE / BACK)', 30, 296, '#fff', 6);
+    } else if (this.page === 1) {
+      const rows = [
+        [['square'], 'LIGHT PUNCH'], [['triangle'], 'HEAVY PUNCH'], [['cross'], 'LIGHT KICK'], [['circle'], 'HEAVY KICK'],
+        ['R1', 'SPECIAL'], ['R2', 'HYPER'], ['L1', 'ASSIST'], ['L2', 'TAG'], ['CREATE', 'TAUNT'], ['OPTIONS', 'PAUSE'],
+      ];
+      rows.forEach(([g, label], i) => {
+        const col = i < 5 ? 0 : 1, row = i % 5;
+        const x = 50 + col * 170, y = 70 + row * 24;
+        if (Array.isArray(g)) psGlyph(ctx, g[0], x, y - 3, 8); else pill(ctx, g, x, y - 3);
+        L(label, x + 22, y, '#fff', 6);
+      });
+      L('LEFT STICK / D-PAD: MOVE', 50, 196, '#9fe8ff', 6);
+      L('MENUS:', 50, 214, '#9fe8ff', 6); psGlyph(ctx, 'cross', 104, 211, 6); L('SELECT', 114, 214, '#fff', 6); psGlyph(ctx, 'circle', 178, 211, 6); L('BACK', 188, 214, '#fff', 6);
+      L('RUMBLE ON HITS, BLOCKS, HYPERS AND K.O.S', 50, 232, '#9fe8ff', 6);
+      L('XBOX / OTHER PADS: SAME POSITIONS', 50, 250, '#aaa', 6);
+      L('1ST CONTROLLER = P1, 2ND = P2', 50, 266, '#aaa', 6);
+      L('TOUCH (PHONES/TABLETS)', 400, 70, '#ffe06a', 7);
+      ['DRAG ANYWHERE ON THE', 'LEFT SIDE: JOYSTICK', '', 'RIGHT SIDE BUTTONS:', 'LP HP SP / LK HK HYPER', 'ASSIST + TAG ABOVE', '', 'SLIDE A THUMB ACROSS', 'BUTTONS TO ROLL INPUTS', '', 'TOP CENTER: PAUSE', 'PLAY IN LANDSCAPE'].forEach((l2, i) => L(l2, 400, 90 + i * 13, '#ddd', 6));
     } else {
       const lines = [
         ['2-ON-2 TAG', 'Each side fields two heroes. Knock out both to win.'],
-        ['TAG (H)', 'Swap your partner in. The benched hero slowly heals red health.'],
-        ['ASSIST (Y)', 'Partner jumps in for one special, then leaves. Has a cooldown.'],
+        ['TAG', 'Swap your partner in. The benched hero slowly heals red health.'],
+        ['ASSIST', 'Partner jumps in for one special, then leaves. Has a cooldown.'],
         ['CHAINS', 'Light into Heavy. Any normal cancels into a special on hit.'],
         ['LAUNCHER', 'Crouch + Heavy Punch launches. Hold UP to chase into the air.'],
         ['AIR COMBO', 'Juggle with air normals; jump Heavy Kick spikes them down.'],
-        ['HYPER (L)', 'Costs 1 bar (max 3). Specials cancel into hypers on hit.'],
+        ['HYPER', 'Costs 1 bar (max 3). Specials cancel into hypers on hit.'],
         ['CROSSOVER', 'Hold TAG + press HYPER with 2 bars: both heroes go hyper.'],
         ['BLOCK', 'Hold back. Crouch-block lows, stand-block jump-ins.'],
         ['DASH', 'Double-tap forward / back. Super jump: down, then up.'],
@@ -192,7 +235,7 @@ export class HelpScene {
       ];
       lines.forEach(([a, b], i) => { L(a, 30, 62 + i * 22, '#ffe06a', 7); L(b, 150, 62 + i * 22, '#fff', 6); });
     }
-    text(ctx, 'LEFT/RIGHT: PAGE    ANY BUTTON: BACK', W / 2, 350, { size: 6, align: 'center', color: '#aaa' });
+    text(ctx, '< LEFT / RIGHT: PAGE ' + (this.page + 1) + '/3 >    ANY BUTTON: BACK', W / 2, 350, { size: 6, align: 'center', color: '#aaa' });
   }
 }
 
