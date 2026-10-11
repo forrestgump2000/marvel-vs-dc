@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>dev gallery</title>
+<style>body{margin:0;background:#334;color:#fff;font:12px monospace} canvas{image-rendering:pixelated;width:100vw;width:100vw}</style></head>
+<body><canvas id="c" width="660" height="200"></canvas>
+<script type="module">
+import { MARVEL } from './js/chars/marvel.js';
+import { DC } from './js/chars/dc.js';
+import { buildCharacter } from './js/moves.js';
+import { Fighter } from './js/fighter.js';
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+const roster = [...MARVEL, ...DC];
+const team = { side: 0, members: [], pad: { held: () => false } };
+const start = +(new URLSearchParams(location.search).get('i') || 0);
+const fs = roster.slice(start, start + 4).map((d) => { const f = new Fighter(d, buildCharacter(d), team, 0); return f; });
+const q = new URLSearchParams(location.search);
+window.ANIM = q.get('a') || 'idle';
+window.MOVE = q.get('m');
+window.T = q.get('t') ? +q.get('t') : null;
+let fr = 0;
+function draw() {
+  ctx.fillStyle = '#556'; ctx.fillRect(0, 0, 660, 200);
+  fs.forEach((f, i) => {
+    const x = 85 + i * 165, y = 185;
+    ctx.fillStyle = '#445'; ctx.fillRect(x - 38, y, 76, 2);
+    let m = null;
+    if (window.MOVE) { const [k, idx] = window.MOVE.split(':'); m = k === 'n' ? f.B.normals[idx] : k === 's' ? f.B.specials[+idx] : f.B.hypers[+idx]; }
+    if (m) { f.state = 'move'; f.move = m; f.mt = window.T != null ? window.T : fr % (Math.min(m.len, 90)); }
+    else { f.state = 'idle'; f.anim = window.ANIM; f.animT = window.T != null ? window.T : fr; }
+    f.animClock = fr;
+    f.updatePose();
+    const r = f.buf.render(f.sk, f, f.def.look, 1, 1.2 * (f.def.scale || 1));
+    ctx.drawImage(f.buf.cv, r[0], r[1], r[2], r[3], x - 210 + r[0], y - 300 + r[1], r[2], r[3]);
+    if (f.def.look.glow) { ctx.save(); ctx.translate(x, y); ctx.scale(1.2, 1.2); ctx.globalCompositeOperation = 'lighter'; f.def.look.glow(ctx, f.sk, f, fr); ctx.restore(); }
+  });
+  fr++;
+  requestAnimationFrame(draw);
+}
+draw();
+</script></body></html>

@@ -1,0 +1,17 @@
+:root { --bg: #05050c; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+body { display: flex; align-items: center; justify-content: center; }
+#game { image-rendering: pixelated; image-rendering: crisp-edges; display: block; background: #000; box-shadow: 0 0 40px rgba(255, 60, 60, 0.15), 0 0 80px rgba(60, 100, 255, 0.12); }
+
+#touch { display: none; position: fixed; inset: 0; pointer-events: none; font-family: "Press Start 2P", monospace; }
+#touch.on { display: block; }
+#touch .stick { position: absolute; left: 4vmin; bottom: 4vmin; width: 26vmin; height: 26vmin; border-radius: 50%; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25); pointer-events: auto; }
+#touch .knob { position: absolute; left: 50%; top: 50%; width: 11vmin; height: 11vmin; margin: -5.5vmin 0 0 -5.5vmin; border-radius: 50%; background: rgba(255, 255, 255, 0.3); }
+#touch .btns { position: absolute; right: 3vmin; bottom: 3vmin; display: grid; grid-template-columns: repeat(3, 12vmin); gap: 2vmin; pointer-events: auto; }
+#touch .b { width: 12vmin; height: 12vmin; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 2.2vmin; background: rgba(255, 255, 255, 0.12); border: 2px solid rgba(255, 255, 255, 0.35); pointer-events: auto; }
+#touch .b.down { background: rgba(255, 220, 0, 0.45); }
+#touch .lp, #touch .hp { border-color: rgba(255, 90, 90, 0.7); }
+#touch .lk, #touch .hk { border-color: rgba(90, 150, 255, 0.7); }
+#touch .sp, #touch .hy { border-color: rgba(255, 210, 0, 0.8); }
+#touch .start { position: absolute; top: 2vmin; left: 50%; transform: translateX(-50%); width: 9vmin; height: 6vmin; border-radius: 2vmin; }

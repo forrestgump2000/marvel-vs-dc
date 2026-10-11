@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>art export</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#222;color:#fff;font:12px monospace} canvas{image-rendering:pixelated;display:block;margin:8px;max-width:95vw}</style></head>
+<body>
+<canvas id="thumb" width="1200" height="630"></canvas>
+<canvas id="icon" width="512" height="512"></canvas>
+<pre id="log"></pre>
+<script type="module">
+// Renders the app icon and social thumbnail with the game's own sprite engine, then saves them via tools/serve.py.
+import { MARVEL } from '../js/chars/marvel.js';
+import { DC } from '../js/chars/dc.js';
+import { buildCharacter } from '../js/moves.js';
+import { Fighter } from '../js/fighter.js';
+import { makeCanvas, text } from '../js/util.js';
+import { drawLogo, backdrop } from '../js/scenes.js';
+import { sampleKeys } from '../js/rig.js';
+
+await document.fonts.load('16px "Press Start 2P"');
+const roster = [...MARVEL, ...DC];
+const byId = (id) => roster.find((d) => d.id === id);
+const team = { side: 0, members: [], pad: { held: () => false } };
+
+function sprite(id, pick, facing, scale) {
+  const d = byId(id);
+  const f = new Fighter(d, buildCharacter(d), team, 0);
+  const B = f.B;
+  let keys, t;
+  if (pick.startsWith('s')) { const m = B.specials[+pick[1]]; keys = m.keys; t = pick.length > 2 ? +pick.slice(3) : 14; }
+  else if (pick.startsWith('h')) { const m = B.hypers[+pick[1]]; keys = m.keys; t = pick.length > 2 ? +pick.slice(3) : 14; }
+  else if (pick.startsWith('n')) { const m = B.normals[pick.slice(1).split(':')[0]]; keys = m.keys; t = +(pick.split(':')[1] || 8); }
+  else { keys = B.anims[pick].keys; t = 0; }
+  f.pose = sampleKeys(keys, t);
+  f.animClock = 20; f.capeSw = 30;
+  f.skel();
+  const r = f.buf.render(f.sk, f, d.look, facing, scale);
+  const c = makeCanvas(r[2], r[3]);
+  c.getContext('2d').drawImage(f.buf.cv, r[0], r[1], r[2], r[3], 0, 0, r[2], r[3]);
+  return { c, ox: 210 - r[0], oy: 300 - r[1], f, d };
+}
+function place(ctx, s, x, y) { ctx.drawImage(s.c, Math.round(x - s.ox), Math.round(y - s.oy)); }
+
+// ---------------- thumbnail: drawn at 600x315, scaled x2 with nearest-neighbour
+{
+  const lo = makeCanvas(600, 315); const ctx = lo.getContext('2d');
+  backdrop(ctx, 40, 0.1);
+  const g = ctx.createLinearGradient(0, 230, 0, 315); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.7)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 600, 315);
+  const L = [sprite('wolverine', 'h0:14', 1, 1.3), sprite('spiderman', 's0:10', 1, 1.3)];
+  const Rr = [sprite('superman', 's0:12', -1, 1.3), sprite('batman', 'nhk:9', -1, 1.3)];
+  place(ctx, L[0], 70, 300); place(ctx, L[1], 185, 300);
+  place(ctx, Rr[0], 535, 300); place(ctx, Rr[1], 420, 300);
+  // clash spark
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; ctx.strokeStyle = i % 2 ? '#fff6a0' : '#ff8a20'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(300 + Math.cos(a) * 10, 205 + Math.sin(a) * 10); ctx.lineTo(300 + Math.cos(a) * (30 + (i % 3) * 12), 205 + Math.sin(a) * (30 + (i % 3) * 12)); ctx.stroke(); }
+  ctx.restore();
+  drawLogo(ctx, 300, 74, 1.1, 0);
+  text(ctx, '2 ON 2 TAG BATTLES', 300, 132, { size: 10, align: 'center', color: '#fff', stroke: '#000', strokeW: 4 });
+  text(ctx, '20 HEROES  -  10 MARVEL  vs  10 DC', 300, 302, { size: 8, align: 'center', grad: ['#fff', '#ffd000'], stroke: '#000', strokeW: 3 });
+  const out = document.getElementById('thumb').getContext('2d');
+  out.imageSmoothingEnabled = false; out.drawImage(lo, 0, 0, 1200, 630);
+}
+
+// ---------------- icon: drawn at 128x128, scaled x4
+{
+  const lo = makeCanvas(128, 128); const ctx = lo.getContext('2d');
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(0, 0, 128, 128, 22); ctx.clip();
+  const g = ctx.createLinearGradient(0, 0, 128, 128);
+  g.addColorStop(0, '#ff2a36'); g.addColorStop(0.495, '#a00010'); g.addColorStop(0.505, '#0a2a9a'); g.addColorStop(1, '#2a6cff');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'; for (let y = 0; y < 128; y += 4) for (let x = (y / 4) % 2 ? 2 : 0; x < 128; x += 4) ctx.fillRect(x, y, 1, 1);
+  const a = sprite('spiderman', 's0:10', 1, 0.95), b = sprite('batman', 'nhp:8', -1, 0.95);
+  place(ctx, a, 30, 132); place(ctx, b, 100, 136);
+  // lightning seam
+  ctx.strokeStyle = '#fff6a0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(78, 0); ctx.lineTo(62, 50); ctx.lineTo(70, 54); ctx.lineTo(50, 128); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 94, 128, 34);
+  text(ctx, 'M', 14, 120, { size: 16, color: '#fff', stroke: '#c00010', strokeW: 3 });
+  text(ctx, 'vs', 64, 118, { size: 12, align: 'center', grad: ['#fffbd0', '#ffd000', '#ff6a00'], stroke: '#000', strokeW: 3, italic: true });
+  text(ctx, 'DC', 116, 120, { size: 14, align: 'right', color: '#fff', stroke: '#0030c0', strokeW: 3 });
+  ctx.restore();
+  const out = document.getElementById('icon').getContext('2d');
+  out.imageSmoothingEnabled = false; out.drawImage(lo, 0, 0, 512, 512);
+}
+
+async function save(id, name) {
+  const blob = await new Promise((r) => document.getElementById(id).toBlob(r, 'image/png'));
+  const res = await fetch('/save?name=' + name, { method: 'POST', body: blob });
+  document.getElementById('log').textContent += name + ': ' + (await res.text()) + '\n';
+}
+window.saveAll = async () => { await save('thumb', 'thumbnail.png'); await save('icon', 'icon-512.png'); return 'ok'; };
+document.getElementById('log').textContent = 'ready\n';
+</script></body></html>
